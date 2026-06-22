@@ -1,21 +1,158 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
+  .theme {
+    --font-heading: var(--font-sans);
+    --font-sans: var(--font-sans);
+  }
+  
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: oklch(0.98 0.005 240);
+    --foreground: oklch(0.12 0.015 240);
+    
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.12 0.015 240);
+    
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.12 0.015 240);
+    
+    --primary: oklch(0.51 0.21 252.7);
+    --primary-foreground: oklch(0.98 0 0);
+    
+    --secondary: oklch(0.93 0.01 240);
+    --secondary-foreground: oklch(0.2 0.01 240);
+    
+    --muted: oklch(0.93 0.01 240);
+    --muted-foreground: oklch(0.45 0.01 240);
+    
+    --accent: oklch(0.63 0.19 149);
+    --accent-foreground: oklch(1 0 0);
+    
+    --destructive: oklch(0.55 0.22 27);
+    --destructive-foreground: oklch(0.98 0 0);
+    
+    --border: oklch(0.88 0.01 240);
+    --input: oklch(0.88 0.01 240);
+    --ring: oklch(0.51 0.21 252.7);
+    
+    --radius: 0.75rem;
+    
+    --sidebar: oklch(0.97 0.005 240);
+    --sidebar-foreground: oklch(0.12 0.015 240);
+    --sidebar-primary: oklch(0.51 0.21 252.7);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
+    --sidebar-accent: oklch(0.93 0.01 240);
+    --sidebar-accent-foreground: oklch(0.12 0.015 240);
+    --sidebar-border: oklch(0.88 0.01 240);
+    --sidebar-ring: oklch(0.51 0.21 252.7);
+  }
+
+  .dark {
+    --background: oklch(0.09 0.012 245);
+    --foreground: oklch(0.96 0.005 240);
+    
+    --card: oklch(0.13 0.014 245);
+    --card-foreground: oklch(0.96 0.005 240);
+    
+    --popover: oklch(0.13 0.014 245);
+    --popover-foreground: oklch(0.96 0.005 240);
+    
+    --primary: oklch(0.58 0.21 252.7);
+    --primary-foreground: oklch(0.98 0 0);
+    
+    --secondary: oklch(0.18 0.012 245);
+    --secondary-foreground: oklch(0.96 0.005 240);
+    
+    --muted: oklch(0.18 0.012 245);
+    --muted-foreground: oklch(0.62 0.008 240);
+    
+    --accent: oklch(0.7 0.18 147);
+    --accent-foreground: oklch(0.09 0.012 245);
+    
+    --destructive: oklch(0.48 0.18 27);
+    --destructive-foreground: oklch(0.96 0.005 240);
+    
+    --border: oklch(0.2 0.012 245);
+    --input: oklch(0.2 0.012 245);
+    --ring: oklch(0.58 0.21 252.7);
+    
+    --sidebar: oklch(0.11 0.014 245);
+    --sidebar-foreground: oklch(0.96 0.005 240);
+    --sidebar-primary: oklch(0.58 0.21 252.7);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
+    --sidebar-accent: oklch(0.16 0.014 245);
+    --sidebar-accent-foreground: oklch(0.96 0.005 240);
+    --sidebar-border: oklch(0.18 0.012 245);
+    --sidebar-ring: oklch(0.58 0.21 252.7);
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border outline-none transition-colors duration-150;
+  }
+  
+  *:focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  body {
+    @apply bg-background text-foreground overflow-x-hidden antialiased;
+  }
+}
+
+/* Glassmorphism helpers */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.light .glass {
+  background: rgba(0, 0, 0, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* PDF Viewer overrides */
+.react-pdf__Document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.react-pdf__Page {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dark .react-pdf__Page {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
 }
