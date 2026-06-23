@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
+import { makeSafePdfFilename } from "@/lib/pdf-filename";
 
 // Lazy-load PDF Viewer to prevent SSR build failures (uses canvas/browser APIs)
 const PdfViewer = dynamic(() => import("@/components/pdf/PdfViewer"), {
@@ -78,9 +79,23 @@ export default function DocumentDetailPage() {
     const toastId = toast.loading("Fetching secure download link...");
     try {
       const data = await documentsService.downloadSignedDocument(document._id);
+      const response = await fetch(data.downloadUrl);
+      if (!response.ok) {
+        throw new Error("Could not fetch the PDF for download.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = makeSafePdfFilename(document.title);
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+
       toast.dismiss(toastId);
       toast.success("Download started!");
-      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (err: any) {
       toast.dismiss(toastId);
       toast.error(err?.message || "Failed to download signed document.");

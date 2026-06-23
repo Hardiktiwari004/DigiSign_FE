@@ -49,21 +49,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+import { makeSafePdfFilename } from "@/lib/pdf-filename";
 
 function getReferenceId(value?: EntityReference | null) {
   if (!value) return null;
   return typeof value === "string" ? value : value._id;
-}
-
-function makeSafePdfFilename(title: string) {
-  const safeTitle = title
-    .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]+/g, "")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  return `${safeTitle || "document"}.pdf`;
 }
 
 export default function DocumentsPage() {
