@@ -96,10 +96,12 @@ export default function SignDocumentPage() {
   });
 
   const pageContainerRef = useRef<HTMLDivElement>(null);
+  const signatureOverlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef<string | null>(null);
   const activePointerRef = useRef<number | null>(null);
+  const activePointerTargetRef = useRef<HTMLDivElement | null>(null);
   const startDragRef = useRef({ x: 0, y: 0, overlayLeft: 0, overlayTop: 0 });
   const startResizeRef = useRef({ x: 0, y: 0, width: 0, height: 0, left: 0, top: 0 });
 
@@ -311,10 +313,18 @@ export default function SignDocumentPage() {
     e.target.value = "";
   };
 
-  const handlePointerDown = (e: React.PointerEvent, type: "drag" | "resize", handle?: string) => {
+  const handlePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    type: "drag" | "resize",
+    handle?: string
+  ) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Keep touch movement routed to the signature even when the finger leaves its bounds.
+    e.currentTarget.setPointerCapture(e.pointerId);
     activePointerRef.current = e.pointerId;
+    activePointerTargetRef.current = e.currentTarget;
 
     if (type === "drag") {
       isDraggingRef.current = true;
@@ -342,6 +352,8 @@ export default function SignDocumentPage() {
       if (activePointerRef.current !== e.pointerId) {
         return;
       }
+
+      e.preventDefault();
 
       if (isDraggingRef.current && pageDimensions) {
         const deltaX = e.clientX - startDragRef.current.x;
@@ -393,36 +405,49 @@ export default function SignDocumentPage() {
       }
     };
 
-    const handlePointerUp = (e: PointerEvent) => {
+    const finishPointerInteraction = (e: PointerEvent) => {
       if (activePointerRef.current !== e.pointerId) {
         return;
+      }
+
+      const pointerTarget = activePointerTargetRef.current;
+      if (pointerTarget?.hasPointerCapture(e.pointerId)) {
+        pointerTarget.releasePointerCapture(e.pointerId);
       }
 
       isDraggingRef.current = false;
       isResizingRef.current = null;
       activePointerRef.current = null;
+      activePointerTargetRef.current = null;
     };
 
-    const handlePointerCancel = (e: PointerEvent) => {
-      if (activePointerRef.current !== e.pointerId) {
-        return;
-      }
-
-      isDraggingRef.current = false;
-      isResizingRef.current = null;
-      activePointerRef.current = null;
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", finishPointerInteraction);
+    window.addEventListener("pointercancel", finishPointerInteraction);
 
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("pointerup", finishPointerInteraction);
+      window.removeEventListener("pointercancel", finishPointerInteraction);
     };
   }, [overlayPos.height, overlayPos.width, pageDimensions, signatureAspectRatio, signatureMode]);
+
+  useEffect(() => {
+    const signatureOverlay = signatureOverlayRef.current;
+    if (!signatureOverlay) {
+      return;
+    }
+
+    const preventTouchScroll = (e: TouchEvent) => {
+      e.preventDefault();
+    };
+
+    signatureOverlay.addEventListener("touchmove", preventTouchScroll, { passive: false });
+
+    return () => {
+      signatureOverlay.removeEventListener("touchmove", preventTouchScroll);
+    };
+  }, [isPlacementActive, pageDimensions, signaturePreview]);
 
   const handleSignDocument = async () => {
     if (!pageDimensions || !document || !signaturePreview) return;
@@ -618,6 +643,7 @@ export default function SignDocumentPage() {
 
                 {isPlacementActive && signaturePreview && pageDimensions && (
                   <div
+                    ref={signatureOverlayRef}
                     style={{
                       position: "absolute",
                       left: `${overlayPos.left}px`,
