@@ -40,6 +40,17 @@ export interface Signature {
   createdAt: string;
 }
 
+export interface ReusableSignature {
+  _id: string;
+  name: string;
+  defaultWidth: number;
+  defaultHeight: number;
+  signatureImageUrl: string;
+  userId?: EntityReference;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface PaginatedResult<T> {
   items: T[];
   total: number;

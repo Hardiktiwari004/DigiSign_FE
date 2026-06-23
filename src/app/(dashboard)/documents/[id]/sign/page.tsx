@@ -1,25 +1,29 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Document, Page, pdfjs } from "react-pdf";
 import confetti from "canvas-confetti";
-import { documentsService } from "@/services/documents.service";
 import { toast } from "sonner";
+import { documentsService } from "@/services/documents.service";
+import { signaturesService } from "@/services/signatures.service";
+import { ReusableSignature } from "@/types/api";
 import {
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Upload,
-  RotateCcw,
   FileSignature,
+  Info,
+  Loader2,
   Maximize2,
   Minimize2,
   Move,
-  Loader2,
-  AlertCircle,
-  Info,
+  PackagePlus,
+  Palette,
+  RotateCcw,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,10 +33,10 @@ import { Input } from "@/components/ui/input";
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface OverlayPosition {
-  left: number; // in pixels relative to page element
-  top: number; // in pixels relative to page element
-  width: number; // in pixels
-  height: number; // in pixels
+  left: number;
+  top: number;
+  width: number;
+  height: number;
 }
 
 interface PageDimensions {
@@ -50,25 +54,34 @@ const DEFAULT_SIGNATURE_ASPECT_RATIO = 2.4;
 const DEFAULT_OVERLAY_WIDTH = 180;
 const MIN_OVERLAY_WIDTH = 96;
 
+function getAspectRatio(signature?: Pick<ReusableSignature, "defaultWidth" | "defaultHeight"> | null) {
+  if (!signature || !signature.defaultWidth || !signature.defaultHeight) {
+    return DEFAULT_SIGNATURE_ASPECT_RATIO;
+  }
+
+  const ratio = signature.defaultWidth / signature.defaultHeight;
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : DEFAULT_SIGNATURE_ASPECT_RATIO;
+}
+
 export default function SignDocumentPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
 
-  // React state
-  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageDimensions, setPageDimensions] = useState<PageDimensions | null>(null);
+  const [scale, setScale] = useState(1.2);
+
+  const [signatureMode, setSignatureMode] = useState<"upload" | "library">("upload");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
-  const [signatureAspectRatio, setSignatureAspectRatio] = useState<number>(DEFAULT_SIGNATURE_ASPECT_RATIO);
+  const [signatureAspectRatio, setSignatureAspectRatio] = useState(DEFAULT_SIGNATURE_ASPECT_RATIO);
+  const [selectedReusableSignatureId, setSelectedReusableSignatureId] = useState<string | null>(null);
+  const [isReusableSizeOverridden, setIsReusableSizeOverridden] = useState(false);
   const [isPlacementActive, setIsPlacementActive] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // PDF Page state
-  const [pageDimensions, setPageDimensions] = useState<PageDimensions | null>(null);
-  const [scale, setScale] = useState<number>(1.2);
-
-  // Draggable overlay state
   const [overlayPos, setOverlayPos] = useState<OverlayPosition>({
     left: 40,
     top: 40,
@@ -76,29 +89,33 @@ export default function SignDocumentPage() {
     height: Math.round(DEFAULT_OVERLAY_WIDTH / DEFAULT_SIGNATURE_ASPECT_RATIO),
   });
 
-  // Drag/Resize references
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
-  const isResizingRef = useRef<string | null>(null); // "se" | "sw" | "ne" | "nw"
+  const isResizingRef = useRef<string | null>(null);
   const startDragRef = useRef({ x: 0, y: 0, overlayLeft: 0, overlayTop: 0 });
   const startResizeRef = useRef({ x: 0, y: 0, width: 0, height: 0, left: 0, top: 0 });
 
-  // Query doc details
   const { data: document, isLoading, error } = useQuery({
     queryKey: ["document", id],
     queryFn: () => documentsService.getDocument(id),
     enabled: !!id,
   });
 
-  // Verify document isn't already signed
+  const { data: reusableSignatures = [], isLoading: isReusableLoading } = useQuery({
+    queryKey: ["reusable-signatures"],
+    queryFn: () => signaturesService.listReusableSignatures(),
+  });
+
+  const selectedReusableSignature =
+    reusableSignatures.find((signature) => signature._id === selectedReusableSignatureId) ?? null;
+
   useEffect(() => {
     if (document && document.status === "SIGNED") {
       toast.error("Document is already signed");
       router.push(`/documents/${id}`);
     }
   }, [document, id, router]);
-
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
@@ -117,67 +134,146 @@ export default function SignDocumentPage() {
     });
   };
 
-
-  const applySignatureAsset = (dataUrl: string, aspectRatio: number) => {
+  const clampOverlayToPage = (nextWidth: number, aspectRatio: number) => {
     const normalizedAspectRatio =
       Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : DEFAULT_SIGNATURE_ASPECT_RATIO;
 
-    setSignaturePreview(dataUrl);
-    setSignatureAspectRatio(normalizedAspectRatio);
-    setOverlayPos((current) => {
-      const candidateWidth = current.width || DEFAULT_OVERLAY_WIDTH;
-      const maxWidthFromPage =
-        pageDimensions != null
-          ? Math.min(
-              pageDimensions.renderedWidth - current.left,
-              (pageDimensions.renderedHeight - current.top) * normalizedAspectRatio
-            )
-          : candidateWidth;
-      const width = Math.max(MIN_OVERLAY_WIDTH, Math.min(candidateWidth, maxWidthFromPage));
-      const height = Math.max(24, Math.round(width / normalizedAspectRatio));
-      return { ...current, width, height };
-    });
-    setIsPlacementActive(true);
+    const width = Math.max(MIN_OVERLAY_WIDTH, nextWidth);
+    const height = Math.max(24, Math.round(width / normalizedAspectRatio));
+
+    if (!pageDimensions) {
+      return { width, height, left: overlayPos.left, top: overlayPos.top };
+    }
+
+    const maxLeft = Math.max(0, pageDimensions.renderedWidth - width);
+    const maxTop = Math.max(0, pageDimensions.renderedHeight - height);
+
+    return {
+      width: Math.min(width, pageDimensions.renderedWidth),
+      height: Math.min(height, pageDimensions.renderedHeight),
+      left: Math.min(overlayPos.left, maxLeft),
+      top: Math.min(overlayPos.top, maxTop),
+    };
   };
 
-  const resizeOverlayToWidth = (nextWidth: number) => {
-    if (!pageDimensions) return;
-    if (!Number.isFinite(nextWidth)) return;
-
-    const normalizedAspectRatio =
-      Number.isFinite(signatureAspectRatio) && signatureAspectRatio > 0
-        ? signatureAspectRatio
-        : DEFAULT_SIGNATURE_ASPECT_RATIO;
-
-    const constrainedWidth = Math.max(
-      MIN_OVERLAY_WIDTH,
-      Math.min(
-        nextWidth,
-        pageDimensions.renderedWidth - overlayPos.left,
-        (pageDimensions.renderedHeight - overlayPos.top) * normalizedAspectRatio
-      )
+  const activateSignatureAsset = (
+    previewUrl: string,
+    aspectRatio: number,
+    preferredPdfWidth?: number,
+    preferredPdfHeight?: number
+  ) => {
+    const normalizedAspectRatio = getAspectRatio(
+      preferredPdfWidth && preferredPdfHeight
+        ? { defaultWidth: preferredPdfWidth, defaultHeight: preferredPdfHeight }
+        : null
     );
 
-    setOverlayPos((current) => ({
-      ...current,
-      width: constrainedWidth,
-      height: Math.max(24, Math.round(constrainedWidth / normalizedAspectRatio)),
-    }));
+    setSignaturePreview(previewUrl);
+    setSignatureAspectRatio(Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : normalizedAspectRatio);
+    setIsPlacementActive(true);
+    setOverlayPos((current) => {
+      const scaleFactor =
+        pageDimensions && pageDimensions.pdfWidth > 0
+          ? pageDimensions.renderedWidth / pageDimensions.pdfWidth
+          : null;
+
+      const preferredWidth =
+        preferredPdfWidth && scaleFactor ? preferredPdfWidth * scaleFactor : current.width || DEFAULT_OVERLAY_WIDTH;
+      const nextSize = clampOverlayToPage(preferredWidth, aspectRatio);
+
+      return {
+        left: nextSize.left,
+        top: nextSize.top,
+        width: nextSize.width,
+        height: nextSize.height,
+      };
+    });
   };
 
+  const applyReusableSignature = (signature: ReusableSignature) => {
+    setSelectedReusableSignatureId(signature._id);
+    setSignatureMode("library");
+    setSignatureFile(null);
+    setIsReusableSizeOverridden(false);
+    activateSignatureAsset(
+      signature.signatureImageUrl,
+      getAspectRatio(signature),
+      signature.defaultWidth,
+      signature.defaultHeight
+    );
+  };
 
-  // Process uploaded file
+  useEffect(() => {
+    if (signatureMode !== "library" || !selectedReusableSignature) {
+      return;
+    }
+
+    if (isReusableSizeOverridden) {
+      return;
+    }
+
+    activateSignatureAsset(
+      selectedReusableSignature.signatureImageUrl,
+      getAspectRatio(selectedReusableSignature),
+      selectedReusableSignature.defaultWidth,
+      selectedReusableSignature.defaultHeight
+    );
+    // Re-sync to the visible page size whenever the page is loaded or zoomed.
+    // This keeps the saved PDF-point defaults aligned with the rendered canvas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    pageDimensions?.renderedWidth,
+    pageDimensions?.renderedHeight,
+    signatureMode,
+    selectedReusableSignatureId,
+    isReusableSizeOverridden,
+  ]);
+
+  const resizeOverlayToWidth = (nextWidth: number) => {
+    if (!Number.isFinite(nextWidth)) return;
+
+    const nextSize = clampOverlayToPage(nextWidth, signatureAspectRatio);
+    setOverlayPos(nextSize);
+
+    if (signatureMode === "library") {
+      setIsReusableSizeOverridden(true);
+    }
+  };
+
+  const clearSignature = () => {
+    setSignatureFile(null);
+    setSignaturePreview(null);
+    setSignatureAspectRatio(DEFAULT_SIGNATURE_ASPECT_RATIO);
+    setSignatureMode("upload");
+    setSelectedReusableSignatureId(null);
+    setIsReusableSizeOverridden(false);
+    setIsPlacementActive(false);
+    setOverlayPos({
+      left: 40,
+      top: 40,
+      width: DEFAULT_OVERLAY_WIDTH,
+      height: Math.round(DEFAULT_OVERLAY_WIDTH / DEFAULT_SIGNATURE_ASPECT_RATIO),
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleFileUploadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
       const file = files[0];
       const validTypes = ["image/png", "image/jpeg", "image/jpg"];
+
       if (!validTypes.includes(file.type)) {
         toast.error("Invalid image format", {
           description: "Please upload a PNG, JPG, or JPEG file.",
         });
+        e.target.value = "";
         return;
       }
+
       if (file.size > 5 * 1024 * 1024) {
         toast.error("File too large", {
           description: "Signature image size must be under 5MB.",
@@ -186,13 +282,17 @@ export default function SignDocumentPage() {
         return;
       }
 
+      setSignatureMode("upload");
+      setSelectedReusableSignatureId(null);
+      setIsReusableSizeOverridden(false);
       setSignatureFile(file);
+
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
         const img = new Image();
         img.onload = () => {
-          applySignatureAsset(dataUrl, img.naturalWidth / img.naturalHeight);
+          activateSignatureAsset(dataUrl, img.naturalWidth / img.naturalHeight);
           toast.success("Signature uploaded! Position it on the document.");
         };
         img.onerror = () => toast.error("Could not read the uploaded image.");
@@ -200,29 +300,10 @@ export default function SignDocumentPage() {
       };
       reader.readAsDataURL(file);
     }
+
     e.target.value = "";
   };
 
-  const clearSignature = () => {
-    setSignatureFile(null);
-    setSignaturePreview(null);
-    setSignatureAspectRatio(DEFAULT_SIGNATURE_ASPECT_RATIO);
-    setIsPlacementActive(false);
-    setOverlayPos({
-      left: 40,
-      top: 40,
-      width: DEFAULT_OVERLAY_WIDTH,
-      height: Math.round(DEFAULT_OVERLAY_WIDTH / DEFAULT_SIGNATURE_ASPECT_RATIO),
-    });
-    if (sigCanvasRef.current) {
-      sigCanvasRef.current.clear();
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  // Drag and Resize Handlers
   const handleMouseDown = (e: React.MouseEvent, type: "drag" | "resize", handle?: string) => {
     e.preventDefault();
     if (type === "drag") {
@@ -251,18 +332,17 @@ export default function SignDocumentPage() {
       if (isDraggingRef.current && pageDimensions) {
         const deltaX = e.clientX - startDragRef.current.x;
         const deltaY = e.clientY - startDragRef.current.y;
-        const currentHeight = overlayPos.height;
-        
-        const newLeft = Math.max(
+
+        const nextLeft = Math.max(
           0,
           Math.min(startDragRef.current.overlayLeft + deltaX, pageDimensions.renderedWidth - overlayPos.width)
         );
-        const newTop = Math.max(
+        const nextTop = Math.max(
           0,
-          Math.min(startDragRef.current.overlayTop + deltaY, pageDimensions.renderedHeight - currentHeight)
+          Math.min(startDragRef.current.overlayTop + deltaY, pageDimensions.renderedHeight - overlayPos.height)
         );
 
-        setOverlayPos((pos) => ({ ...pos, left: newLeft, top: newTop }));
+        setOverlayPos((current) => ({ ...current, left: nextLeft, top: nextTop }));
       } else if (isResizingRef.current && pageDimensions) {
         const handle = isResizingRef.current;
         const deltaX = e.clientX - startResizeRef.current.x;
@@ -272,26 +352,30 @@ export default function SignDocumentPage() {
             ? signatureAspectRatio
             : DEFAULT_SIGNATURE_ASPECT_RATIO;
 
-        let newWidth = startResizeRef.current.width;
-        const newLeft = startResizeRef.current.left;
-        const newTop = startResizeRef.current.top;
+        let nextWidth = startResizeRef.current.width;
+        const nextLeft = startResizeRef.current.left;
+        const nextTop = startResizeRef.current.top;
 
         if (handle === "se") {
           const widthFromX = startResizeRef.current.width + deltaX;
           const widthFromY = startResizeRef.current.width + deltaY * normalizedAspectRatio;
-          newWidth = Math.max(MIN_OVERLAY_WIDTH, widthFromX, widthFromY);
+          nextWidth = Math.max(MIN_OVERLAY_WIDTH, widthFromX, widthFromY);
 
-          const maxWidthByRightEdge = pageDimensions.renderedWidth - newLeft;
-          const maxWidthByBottomEdge = (pageDimensions.renderedHeight - newTop) * normalizedAspectRatio;
-          newWidth = Math.min(newWidth, maxWidthByRightEdge, maxWidthByBottomEdge);
+          const maxWidthByRightEdge = pageDimensions.renderedWidth - nextLeft;
+          const maxWidthByBottomEdge = (pageDimensions.renderedHeight - nextTop) * normalizedAspectRatio;
+          nextWidth = Math.min(nextWidth, maxWidthByRightEdge, maxWidthByBottomEdge);
         }
 
         setOverlayPos({
-          left: newLeft,
-          top: newTop,
-          width: newWidth,
-          height: Math.max(24, Math.round(newWidth / normalizedAspectRatio)),
+          left: nextLeft,
+          top: nextTop,
+          width: nextWidth,
+          height: Math.max(24, Math.round(nextWidth / normalizedAspectRatio)),
         });
+
+        if (signatureMode === "library") {
+          setIsReusableSizeOverridden(true);
+        }
       }
     };
 
@@ -307,18 +391,19 @@ export default function SignDocumentPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [overlayPos, pageDimensions, signatureAspectRatio]);
+  }, [overlayPos.height, overlayPos.width, pageDimensions, signatureAspectRatio, signatureMode]);
 
-  // Coordinate Conversion & Submit
   const handleSignDocument = async () => {
-    if (!signatureFile || !pageDimensions || !document) return;
+    if (!pageDimensions || !document || !signaturePreview) return;
+
+    const hasReusableSelection = signatureMode === "library" && !!selectedReusableSignatureId;
+    if (signatureMode === "upload" && !signatureFile) return;
+    if (signatureMode === "library" && !hasReusableSelection) return;
 
     setIsSubmitting(true);
     const toastId = toast.loading("Cryptographically locking signature coordinates...");
 
     try {
-      // Coordinate transformation from browser coordinates (top-left) to PDF points (bottom-left)
-      // The page is rendered with a uniform scale, so one factor keeps the signature ratio intact.
       const scaleFactor = pageDimensions.pdfWidth / pageDimensions.renderedWidth;
 
       const pdfPoints = {
@@ -328,7 +413,6 @@ export default function SignDocumentPage() {
         height: overlayPos.height * scaleFactor,
       };
 
-      // Validations
       if (pdfPoints.x < 0 || pdfPoints.y < 0 || pdfPoints.width <= 0 || pdfPoints.height <= 0) {
         throw new Error("Invalid coordinate boundary translation.");
       }
@@ -338,9 +422,19 @@ export default function SignDocumentPage() {
         page: pageNumber,
         x: Math.round(pdfPoints.x),
         y: Math.round(pdfPoints.y),
-        width: Math.round(pdfPoints.width),
-        height: Math.round(pdfPoints.height),
-        signatureImage: signatureFile,
+        ...(signatureMode === "upload" || isReusableSizeOverridden
+          ? {
+              width: Math.round(pdfPoints.width),
+              height: Math.round(pdfPoints.height),
+            }
+          : {}),
+        ...(signatureMode === "upload"
+          ? {
+              signatureImage: signatureFile ?? undefined,
+            }
+          : {
+              reusableSignatureId: selectedReusableSignatureId ?? undefined,
+            }),
       });
 
       toast.dismiss(toastId);
@@ -375,33 +469,45 @@ export default function SignDocumentPage() {
     return (
       <div className="flex flex-col items-center justify-center p-16 text-center min-h-[400px]">
         <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Unable to load signature workspace</h3>
+        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+          Unable to load signature workspace
+        </h3>
         <p className="text-xs text-slate-500 mt-1 max-w-sm">
           Please check the document ID or your workspace access permissions.
         </p>
         <Link href="/documents" className="mt-6">
-          <Button variant="outline" className="rounded-lg">Return to Documents</Button>
+          <Button variant="outline" className="rounded-lg">
+            Return to Documents
+          </Button>
         </Link>
       </div>
     );
   }
 
+  const canSubmit =
+    !!signaturePreview &&
+    !!pageDimensions &&
+    (signatureMode === "upload" ? !!signatureFile : !!selectedReusableSignatureId);
+
   return (
     <div className="space-y-6">
-      {/* Header breadcrumb */}
-      <div className="flex items-center justify-between">
-        <Link href={`/documents/${id}`} className="flex items-center text-xs font-semibold text-slate-500 hover:text-slate-200">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href={`/documents/${id}`}
+          className="flex items-center text-xs font-semibold text-slate-500 hover:text-slate-200"
+        >
           <ChevronLeft className="w-4 h-4 mr-1.5" />
           Cancel and Return
+        </Link>
+
+        <Link href="/signatures" className="text-xs font-semibold text-blue-500 hover:text-blue-400">
+          Manage reusable signatures
         </Link>
       </div>
 
       <div className="grid gap-6 md:grid-cols-4 items-start">
-        {/* Left Column: PDF Renderer Canvas (Takes 3 cols on desktop) */}
         <div className="md:col-span-3 space-y-4">
           <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-4 shadow-sm overflow-hidden flex flex-col items-center">
-            
-            {/* Viewport Scale & Page Nav */}
             <div className="w-full flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-3 mb-4">
               <div className="flex items-center space-x-2">
                 <Button
@@ -450,7 +556,6 @@ export default function SignDocumentPage() {
               </div>
             </div>
 
-            {/* Document Render Zone with absolute placement overlay container */}
             <div className="w-full flex justify-center overflow-auto max-h-[75vh] p-4 relative bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
               <div
                 ref={pageContainerRef}
@@ -480,7 +585,6 @@ export default function SignDocumentPage() {
                   />
                 </Document>
 
-                {/* Draggable & Resizable overlay of signature preview */}
                 {isPlacementActive && signaturePreview && pageDimensions && (
                   <div
                     style={{
@@ -493,18 +597,15 @@ export default function SignDocumentPage() {
                     className="group flex cursor-move select-none items-center justify-center rounded-2xl border border-blue-500 bg-blue-500/10 p-1 shadow-md shadow-blue-500/15 backdrop-blur-[2px] active:border-blue-600 dark:bg-blue-600/5"
                     onMouseDown={(e) => handleMouseDown(e, "drag")}
                   >
-                    {/* Drag Handle Indicator */}
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center rounded bg-blue-600 px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-white opacity-0 transition-opacity group-hover:opacity-100">
                       <Move className="w-2.5 h-2.5 mr-1" /> Move
                     </div>
 
-                    {/* Resize handle (Bottom-Right corner) */}
                     <div
                       className="absolute -right-1 -bottom-1 flex h-3 w-3 cursor-se-resize items-center justify-center rounded-full border border-white bg-blue-600 hover:bg-blue-700"
                       onMouseDown={(e) => handleMouseDown(e, "resize", "se")}
                     />
 
-                    {/* Preview rendering */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={signaturePreview}
@@ -518,20 +619,47 @@ export default function SignDocumentPage() {
           </Card>
         </div>
 
-        {/* Right Column: Signature Creation pad */}
         <div className="space-y-6">
           <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 shadow-sm overflow-hidden">
             <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-800/60">
               <CardTitle className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                Create Signature
+                Signature Source
               </CardTitle>
               <CardDescription className="text-[10px] text-slate-500">
-                Choose a signature generation method
+                Upload a new signature or pick from your library
               </CardDescription>
             </CardHeader>
 
             <CardContent className="pt-4 space-y-4">
-              <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+                <Button
+                  type="button"
+                  variant={signatureMode === "upload" ? "default" : "ghost"}
+                  className="rounded-xl text-xs"
+                  onClick={clearSignature}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload
+                </Button>
+                <Button
+                  type="button"
+                  variant={signatureMode === "library" ? "default" : "ghost"}
+                  className="rounded-xl text-xs"
+                  onClick={() => {
+                    setSignatureMode("library");
+                    setSignatureFile(null);
+                    setSignaturePreview(null);
+                    setIsPlacementActive(false);
+                    setIsReusableSizeOverridden(false);
+                  }}
+                >
+                  <Palette className="mr-2 h-4 w-4" />
+                  Library
+                </Button>
+              </div>
+
+              {signatureMode === "upload" ? (
+                <div className="space-y-4">
                   <div
                     onClick={() => fileInputRef.current?.click()}
                     className="group relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-6 text-center transition hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-800 dark:from-slate-950 dark:to-slate-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/20"
@@ -567,36 +695,107 @@ export default function SignDocumentPage() {
                       Max file size 5MB
                     </p>
                   </div>
-                  {signaturePreview && signatureFile && (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                            Uploaded preview
-                          </p>
-                          <p className="text-xs text-slate-400">{signatureFile.name}</p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={clearSignature}
-                          className="h-8 rounded-lg text-xs"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={signaturePreview} alt="Uploaded signature preview" className="h-28 w-full object-contain" />
-                      </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-slate-500">
+                    <span className="font-semibold">Saved signatures</span>
+                    <Link href="/signatures" className="text-blue-500 hover:text-blue-400 normal-case">
+                      Open library
+                    </Link>
+                  </div>
+
+                  {isReusableLoading ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 dark:border-slate-800">
+                      Loading your saved signatures...
+                    </div>
+                  ) : reusableSignatures.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-500 dark:border-slate-800">
+                      <PackagePlus className="mx-auto mb-2 h-5 w-5 text-slate-400" />
+                      No reusable signatures yet. Create one in the library first.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[360px] overflow-auto pr-1">
+                      {reusableSignatures.map((signature) => {
+                        const isActive = signature._id === selectedReusableSignatureId;
+                        return (
+                          <button
+                            key={signature._id}
+                            type="button"
+                            onClick={() => applyReusableSignature(signature)}
+                            className={[
+                              "w-full rounded-2xl border p-3 text-left transition",
+                              isActive
+                                ? "border-blue-500 bg-blue-500/5 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900",
+                            ].join(" ")}
+                          >
+                            <div className="flex gap-3">
+                              <div className="h-14 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-900">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={signature.signatureImageUrl}
+                                  alt={signature.name}
+                                  className="h-full w-full object-contain"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                      {signature.name}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                      {signature.defaultWidth} x {signature.defaultHeight} pt
+                                    </p>
+                                  </div>
+                                  {isActive && (
+                                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      Selected
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="mt-2 text-[11px] text-slate-400">
+                                  Click to prefill the signer with this reusable asset.
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
-              </div>
+                </div>
+              )}
+
+              {signaturePreview && signatureFile && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                        Uploaded preview
+                      </p>
+                      <p className="text-xs text-slate-400">{signatureFile.name}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearSignature}
+                      className="h-8 rounded-lg text-xs"
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={signaturePreview} alt="Uploaded signature preview" className="h-28 w-full object-contain" />
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Setup / Action Details */}
           {isPlacementActive && signaturePreview && (
             <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 shadow-sm p-4 space-y-4">
               <div className="flex items-center space-x-2 text-xs text-blue-500 font-semibold uppercase tracking-wider">
@@ -611,7 +810,11 @@ export default function SignDocumentPage() {
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Placement size</p>
-                    <p className="text-xs text-slate-400">Resize with one locked width control.</p>
+                    <p className="text-xs text-slate-400">
+                      {signatureMode === "library" && !isReusableSizeOverridden
+                        ? "Using the reusable signature defaults."
+                        : "Resize with the width control."}
+                    </p>
                   </div>
                   <div className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-800">
                     {overlayPos.width}px
@@ -633,6 +836,11 @@ export default function SignDocumentPage() {
                   <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-800 dark:bg-slate-950">
                     Corner handle keeps ratio fixed
                   </span>
+                  {signatureMode === "library" && (
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 dark:border-slate-800 dark:bg-slate-950">
+                      Uses reusable signature defaults when untouched
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -642,11 +850,12 @@ export default function SignDocumentPage() {
                   variant="outline"
                   className="flex-1 rounded-xl text-xs py-5 h-auto dark:border-slate-800"
                 >
+                  <RotateCcw className="mr-2 h-4 w-4" />
                   Reset
                 </Button>
                 <Button
                   onClick={handleSignDocument}
-                  disabled={isSubmitting}
+                  disabled={!canSubmit || isSubmitting}
                   className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs py-5 h-auto font-semibold flex items-center justify-center"
                 >
                   {isSubmitting ? (

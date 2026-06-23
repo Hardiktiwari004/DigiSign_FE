@@ -15,9 +15,10 @@ export interface SignDocumentParams {
   page: number;
   x: number;
   y: number;
-  width: number;
-  height: number;
-  signatureImage: File;
+  width?: number;
+  height?: number;
+  signatureImage?: File;
+  reusableSignatureId?: string;
 }
 
 export const documentsService = {
@@ -68,9 +69,18 @@ export const documentsService = {
     formData.append("page", String(params.page));
     formData.append("x", String(params.x));
     formData.append("y", String(params.y));
-    formData.append("width", String(params.width));
-    formData.append("height", String(params.height));
-    formData.append("signatureImage", params.signatureImage);
+    if (typeof params.width === "number") {
+      formData.append("width", String(params.width));
+    }
+    if (typeof params.height === "number") {
+      formData.append("height", String(params.height));
+    }
+    if (params.signatureImage) {
+      formData.append("signatureImage", params.signatureImage);
+    }
+    if (params.reusableSignatureId) {
+      formData.append("reusableSignatureId", params.reusableSignatureId);
+    }
 
     const res = await api.post<ApiSuccess<{ signature: Signature }>>(
       `/api/documents/${params.documentId}/sign`,

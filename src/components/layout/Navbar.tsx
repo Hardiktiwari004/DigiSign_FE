@@ -4,7 +4,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/auth.store";
 import { ThemeSwitch } from "./ThemeSwitch";
-import { User } from "lucide-react";
+import { FileSignature, User } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -18,6 +18,7 @@ export function Navbar() {
       return "Document Details";
     }
     if (pathname.startsWith("/documents")) return isAdmin ? "All Documents" : "My Documents";
+    if (pathname.startsWith("/signatures")) return "Signature Library";
     if (pathname.startsWith("/verify")) return "Document Authentication";
     if (pathname.startsWith("/admin/audit-logs")) return "Audit Logs";
     return "DigiSign";
@@ -27,7 +28,14 @@ export function Navbar() {
     <header className="hidden md:flex items-center justify-between h-16 px-6 lg:px-8 border-b border-slate-200 bg-white/80 dark:bg-slate-950/80 dark:border-slate-800/80 backdrop-blur-md sticky top-0 z-30">
       <div>
         <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100 tracking-tight">
-          {getPageTitle()}
+          {getPageTitle() === "Signature Library" ? (
+            <span className="inline-flex items-center gap-2">
+              <FileSignature className="h-4 w-4 text-blue-500" />
+              {getPageTitle()}
+            </span>
+          ) : (
+            getPageTitle()
+          )}
         </h1>
       </div>
 

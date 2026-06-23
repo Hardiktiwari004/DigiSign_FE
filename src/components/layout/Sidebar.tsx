@@ -11,6 +11,7 @@ import {
   Files,
   ShieldCheck,
   History,
+  FileSignature,
   LogOut,
   Menu,
   X,
@@ -27,6 +28,7 @@ export function Sidebar() {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, role: "USER" },
     { name: isAdmin ? "All Documents" : "My Documents", href: "/documents", icon: Files, role: "USER" },
+    { name: "Signature Library", href: "/signatures", icon: FileSignature, role: "USER" },
     { name: "Public Verify", href: "/verify", icon: ShieldCheck, role: "USER" },
     { name: "Audit Logs", href: "/admin/audit-logs", icon: History, role: "ADMIN" },
   ];

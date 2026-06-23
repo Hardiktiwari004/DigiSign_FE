@@ -10,7 +10,9 @@
 *   **Authentication Flow**: Secure user registration and login with JWT integration, protected routes, and automatic token refreshing.
 *   **Document Dashboard**: A comprehensive dashboard to view, filter, and manage uploaded documents.
 *   **PDF Viewer & Signing**: Integrated PDF rendering (`react-pdf`) and a digital signature pad (`react-signature-canvas`) allowing users to draw and place signatures on their documents securely.
+*   **Reusable Signature Library**: Save a signature once, manage it from the signature library, and reuse it when signing future documents.
 *   **Signature Verification Interface**: A dedicated page where users or third parties can verify the authenticity of a signed document.
+*   **Admin Dashboard & Audit Logs**: Admin users can access system-wide document insights, statistics, and audit logs from the protected admin area.
 *   **State Management**: Global state handling via Zustand and server-state caching/synchronization via React Query.
 *   **Form Validation**: Robust client-side validation using React Hook Form and Zod schemas.
 *   **Toast Notifications**: Elegant real-time feedback using Sonner.
@@ -57,6 +59,13 @@ Follow these steps to run the frontend application locally:
 The frontend application relies on the following environment variable to connect to the backend API:
 
 *   `NEXT_PUBLIC_API_BASE_URL`: The URL where the backend API is hosted (e.g., `http://localhost:5000`). If omitted, it defaults to `http://localhost:5000`.
+
+## Default Admin Credentials
+
+Use the following admin account to access the admin dashboard and audit logs in a local or seeded environment:
+
+*   **Email**: `admin@gmail.com`
+*   **Password**: `Admin@123`
 
 ## Architecture Overview
 
