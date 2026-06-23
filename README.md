@@ -4,7 +4,7 @@
 
 **DigiSign** is a modern, premium web application designed to facilitate secure document uploads, management, and digital signing. This repository contains the frontend application built with Next.js and React. It provides an intuitive, highly responsive, and aesthetically pleasing user interface for users to authenticate, upload PDF documents, digitally sign them using a sleek canvas interface, track signature status, and verify document authenticity.
 
-## Features Implemented
+## Features Implemented 
 
 *   **Premium User Interface**: A modern, glassmorphism-inspired design with dark mode, fluid animations (Framer Motion), and responsive layouts using Tailwind CSS.
 *   **Authentication Flow**: Secure user registration and login with JWT integration, protected routes, and automatic token refreshing.
