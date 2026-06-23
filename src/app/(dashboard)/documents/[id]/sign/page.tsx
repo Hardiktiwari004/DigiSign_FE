@@ -71,7 +71,13 @@ export default function SignDocumentPage() {
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageDimensions, setPageDimensions] = useState<PageDimensions | null>(null);
-  const [scale, setScale] = useState(1.2);
+  const [scale, setScale] = useState(() => {
+    if (typeof window === "undefined") {
+      return 1.2;
+    }
+
+    return window.innerWidth < 640 ? 0.62 : 1.2;
+  });
 
   const [signatureMode, setSignatureMode] = useState<"upload" | "library">("upload");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
@@ -93,6 +99,7 @@ export default function SignDocumentPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef<string | null>(null);
+  const activePointerRef = useRef<number | null>(null);
   const startDragRef = useRef({ x: 0, y: 0, overlayLeft: 0, overlayTop: 0 });
   const startResizeRef = useRef({ x: 0, y: 0, width: 0, height: 0, left: 0, top: 0 });
 
@@ -304,8 +311,11 @@ export default function SignDocumentPage() {
     e.target.value = "";
   };
 
-  const handleMouseDown = (e: React.MouseEvent, type: "drag" | "resize", handle?: string) => {
+  const handlePointerDown = (e: React.PointerEvent, type: "drag" | "resize", handle?: string) => {
     e.preventDefault();
+    e.stopPropagation();
+    activePointerRef.current = e.pointerId;
+
     if (type === "drag") {
       isDraggingRef.current = true;
       startDragRef.current = {
@@ -328,7 +338,11 @@ export default function SignDocumentPage() {
   };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
+      if (activePointerRef.current !== e.pointerId) {
+        return;
+      }
+
       if (isDraggingRef.current && pageDimensions) {
         const deltaX = e.clientX - startDragRef.current.x;
         const deltaY = e.clientY - startDragRef.current.y;
@@ -379,17 +393,34 @@ export default function SignDocumentPage() {
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = (e: PointerEvent) => {
+      if (activePointerRef.current !== e.pointerId) {
+        return;
+      }
+
       isDraggingRef.current = false;
       isResizingRef.current = null;
+      activePointerRef.current = null;
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    const handlePointerCancel = (e: PointerEvent) => {
+      if (activePointerRef.current !== e.pointerId) {
+        return;
+      }
+
+      isDraggingRef.current = false;
+      isResizingRef.current = null;
+      activePointerRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
     };
   }, [overlayPos.height, overlayPos.width, pageDimensions, signatureAspectRatio, signatureMode]);
 
@@ -491,7 +522,7 @@ export default function SignDocumentPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link
           href={`/documents/${id}`}
           className="flex items-center text-xs font-semibold text-slate-500 hover:text-slate-200"
@@ -505,11 +536,11 @@ export default function SignDocumentPage() {
         </Link>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-4 items-start">
-        <div className="md:col-span-3 space-y-4">
+      <div className="grid gap-6 lg:grid-cols-4 items-start">
+        <div className="lg:col-span-3 space-y-4">
           <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-4 shadow-sm overflow-hidden flex flex-col items-center">
-            <div className="w-full flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-3 mb-4">
-              <div className="flex items-center space-x-2">
+            <div className="w-full flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800/60 pb-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -533,7 +564,7 @@ export default function SignDocumentPage() {
                 </Button>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -556,7 +587,7 @@ export default function SignDocumentPage() {
               </div>
             </div>
 
-            <div className="w-full flex justify-center overflow-auto max-h-[75vh] p-4 relative bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="w-full flex justify-center overflow-auto max-h-[60vh] sm:max-h-[75vh] p-2 sm:p-4 relative bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
               <div
                 ref={pageContainerRef}
                 className="relative select-none"
@@ -593,17 +624,19 @@ export default function SignDocumentPage() {
                       top: `${overlayPos.top}px`,
                       width: `${overlayPos.width}px`,
                       height: `${overlayPos.height}px`,
+                      touchAction: "none",
                     }}
-                    className="group flex cursor-move select-none items-center justify-center rounded-2xl border border-blue-500 bg-blue-500/10 p-1 shadow-md shadow-blue-500/15 backdrop-blur-[2px] active:border-blue-600 dark:bg-blue-600/5"
-                    onMouseDown={(e) => handleMouseDown(e, "drag")}
+                    className="group flex cursor-grab select-none items-center justify-center rounded-2xl border border-blue-500 bg-blue-500/10 p-1 shadow-md shadow-blue-500/15 backdrop-blur-[2px] active:cursor-grabbing active:border-blue-600 dark:bg-blue-600/5 touch-none"
+                    onPointerDown={(e) => handlePointerDown(e, "drag")}
                   >
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center rounded bg-blue-600 px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center rounded bg-blue-600 px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider text-white opacity-0 transition-opacity group-hover:opacity-100 sm:group-hover:opacity-100">
                       <Move className="w-2.5 h-2.5 mr-1" /> Move
                     </div>
 
                     <div
-                      className="absolute -right-1 -bottom-1 flex h-3 w-3 cursor-se-resize items-center justify-center rounded-full border border-white bg-blue-600 hover:bg-blue-700"
-                      onMouseDown={(e) => handleMouseDown(e, "resize", "se")}
+                      className="absolute -right-1 -bottom-1 flex h-4 w-4 cursor-se-resize items-center justify-center rounded-full border border-white bg-blue-600 hover:bg-blue-700 touch-none"
+                      onPointerDown={(e) => handlePointerDown(e, "resize", "se")}
+                      style={{ touchAction: "none" }}
                     />
 
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -619,7 +652,7 @@ export default function SignDocumentPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-6">
           <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 shadow-sm overflow-hidden">
             <CardHeader className="pb-4 border-b border-slate-100 dark:border-slate-800/60">
               <CardTitle className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
@@ -631,7 +664,7 @@ export default function SignDocumentPage() {
             </CardHeader>
 
             <CardContent className="pt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
+              <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-1 sm:grid-cols-2 dark:border-slate-800 dark:bg-slate-950">
                 <Button
                   type="button"
                   variant={signatureMode === "upload" ? "default" : "ghost"}
@@ -662,7 +695,7 @@ export default function SignDocumentPage() {
                 <div className="space-y-4">
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="group relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-6 text-center transition hover:border-blue-300 hover:bg-blue-50/40 dark:border-slate-800 dark:from-slate-950 dark:to-slate-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/20"
+                    className="group relative flex min-h-[160px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 text-center transition hover:border-blue-300 hover:bg-blue-50/40 sm:min-h-[180px] sm:p-6 dark:border-slate-800 dark:from-slate-950 dark:to-slate-900 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/20"
                   >
                     <input
                       ref={fileInputRef}
@@ -715,7 +748,7 @@ export default function SignDocumentPage() {
                       No reusable signatures yet. Create one in the library first.
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-[360px] overflow-auto pr-1">
+                    <div className="space-y-2 max-h-[320px] overflow-auto pr-1 sm:max-h-[360px]">
                       {reusableSignatures.map((signature) => {
                         const isActive = signature._id === selectedReusableSignatureId;
                         return (
@@ -844,11 +877,11 @@ export default function SignDocumentPage() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3.5 pt-2">
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:space-x-3.5 sm:gap-0">
                 <Button
                   onClick={clearSignature}
                   variant="outline"
-                  className="flex-1 rounded-xl text-xs py-5 h-auto dark:border-slate-800"
+                  className="w-full rounded-xl text-xs py-5 h-auto dark:border-slate-800 sm:flex-1"
                 >
                   <RotateCcw className="mr-2 h-4 w-4" />
                   Reset
@@ -856,7 +889,7 @@ export default function SignDocumentPage() {
                 <Button
                   onClick={handleSignDocument}
                   disabled={!canSubmit || isSubmitting}
-                  className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs py-5 h-auto font-semibold flex items-center justify-center"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs py-5 h-auto font-semibold flex items-center justify-center sm:flex-[2]"
                 >
                   {isSubmitting ? (
                     <>

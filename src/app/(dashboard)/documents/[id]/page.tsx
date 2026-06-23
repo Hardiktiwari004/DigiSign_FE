@@ -150,20 +150,20 @@ export default function DocumentDetailPage() {
   return (
     <div className="space-y-6">
       {/* Back to list navigator */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Link href="/documents" className="flex items-center text-xs font-semibold text-slate-500 hover:text-slate-200">
           <ChevronLeft className="w-4 h-4 mr-1.5" />
           Back to Documents
         </Link>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3 items-start">
+      <div className="grid gap-6 lg:grid-cols-3 items-start">
         {/* Left Column: PDF Viewer */}
-        <div className="md:col-span-2 space-y-4">
-          <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-4 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800/60 pb-3">
+        <div className="lg:col-span-2 space-y-4 min-w-0">
+          <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 p-3 sm:p-4 shadow-sm overflow-hidden">
+            <div className="flex flex-col gap-3 mb-4 border-b border-slate-100 dark:border-slate-800/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-md">
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-full sm:max-w-md">
                   {document.title}
                 </h2>
                 <p className="text-[10px] text-slate-400 mt-0.5 font-mono truncate">
@@ -179,7 +179,7 @@ export default function DocumentDetailPage() {
         </div>
 
         {/* Right Column: Metadata, Verification and Actions */}
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-6">
           {/* Metadata Card */}
           <Card className="border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/60 shadow-sm">
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800/60">
@@ -227,8 +227,8 @@ export default function DocumentDetailPage() {
                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                   </Button>
                 </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-150 dark:border-slate-850 flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-200">
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-150 dark:border-slate-850 flex items-center justify-between gap-3">
+                  <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-200 break-all">
                     {document.verificationCode}
                   </span>
                 </div>
@@ -251,7 +251,7 @@ export default function DocumentDetailPage() {
             {/* Sign Document (Only if status is UPLOADED or IN_PROGRESS) */}
             {(document.status === "UPLOADED" || document.status === "IN_PROGRESS") && (
               <Link href={`/documents/${document._id}/sign`} className="block">
-                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-5 font-semibold flex items-center justify-center space-x-2">
+                <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-5 text-sm font-semibold flex items-center justify-center space-x-2">
                   <FileSignature className="w-4.5 h-4.5 mr-2" />
                   Sign Document
                 </Button>
@@ -262,7 +262,7 @@ export default function DocumentDetailPage() {
             {document.status === "SIGNED" ? (
               <Button
                 onClick={handleDownload}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-5 font-semibold flex items-center justify-center space-x-2"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-5 text-sm font-semibold flex items-center justify-center space-x-2"
               >
                 <Download className="w-4.5 h-4.5 mr-2" />
                 Download Signed PDF
@@ -270,7 +270,7 @@ export default function DocumentDetailPage() {
             ) : (
               <Button
                 disabled
-                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl py-5 font-semibold flex items-center justify-center space-x-2 border dark:border-slate-750"
+                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-xl py-5 text-sm font-semibold flex items-center justify-center space-x-2 border dark:border-slate-750"
               >
                 <Download className="w-4.5 h-4.5 mr-2" />
                 Download PDF (Signed only)
@@ -286,7 +286,7 @@ export default function DocumentDetailPage() {
               }}
               variant="ghost"
               disabled={deleteMutation.isPending}
-              className="w-full justify-center text-red-500 hover:text-red-400 hover:bg-red-500/5 rounded-xl py-5 h-auto border border-dashed border-red-500/10 hover:border-red-500/20"
+              className="w-full justify-center text-red-500 hover:text-red-400 hover:bg-red-500/5 rounded-xl py-5 h-auto text-sm border border-dashed border-red-500/10 hover:border-red-500/20"
             >
               {deleteMutation.isPending ? (
                 <>
